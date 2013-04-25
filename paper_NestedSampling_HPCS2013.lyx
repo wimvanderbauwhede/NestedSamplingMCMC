@@ -1,0 +1,2954 @@
+#LyX 2.0 created this file. For more info see http://www.lyx.org/
+\lyxformat 413
+\begin_document
+\begin_header
+\textclass IEEEtran
+\options conference
+\use_default_options false
+\maintain_unincluded_children false
+\language british
+\language_package none
+\inputencoding utf8x
+\fontencoding global
+\font_roman times
+\font_sans default
+\font_typewriter courier
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100
+\font_tt_scale 100
+
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\spacing single
+\use_hyperref false
+\papersize letterpaper
+\use_geometry false
+\use_amsmath 1
+\use_esint 1
+\use_mhchem 0
+\use_mathdots 0
+\cite_engine basic
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\use_refstyle 0
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\quotes_language english
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+title{Implementing Data Parallelisation in a Nested-Sampling Monte Carlo
+ Algorithm}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+author{
+\backslash
+IEEEauthorblockN{Wim Vanderbauwhede}
+\end_layout
+
+\begin_layout Plain Layout
+
+
+\backslash
+IEEEauthorblockA{School of Computing Science
+\backslash
+
+\backslash
+ University of Glasgow
+\backslash
+
+\backslash
+ Glasgow, UK}
+\end_layout
+
+\begin_layout Plain Layout
+
+
+\backslash
+and
+\end_layout
+
+\begin_layout Plain Layout
+
+
+\backslash
+IEEEauthorblockN{Stefanie Lewis, David Ireland}
+\end_layout
+
+\begin_layout Plain Layout
+
+
+\backslash
+IEEEauthorblockA{School of Physics 
+\backslash
+& Astronomy
+\backslash
+
+\backslash
+ University of Glasgow
+\backslash
+
+\backslash
+ Glasgow, UK}}
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+maketitle
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Keywords
+General-Purpose computation on Graphics Processing Units (GPGPU), Parallelizatio
+n of Simulation
+\end_layout
+
+\begin_layout Abstract
+In this paper we report our work on the parallelisation of a Nested Sampling
+ Monte Carlo algorithm used in the nuclear physics field of hadron spectroscopy.
+ The purpose of the application is to fit a set of parameters in a nuclear
+ physics model based on the observations of the beam properties.
+\end_layout
+
+\begin_layout Abstract
+We used both OpenCL and OpenMP to parallelise the existing code.
+ Our aims where to achieve parallelisation with minimal changes to the original
+ source code, and to evaluate the performance of the parallel code on both
+ a GPU and a multicore CPU.
+\end_layout
+
+\begin_layout Abstract
+On the implementation side, we show that by using our OclWrapper abstraction
+ over the OpenCL API, integration of OpenCL code into and existing C++ code
+ base is much simplified, to the extent that integrating OpenCL is not considera
+bly more effort than using OpenMP, as the main effort is in making the code
+ suitable for parallel execution.
+\end_layout
+
+\begin_layout Abstract
+Our evaluation shows that the best results depend strongly on the size of
+ dataset.
+ For large numbers of events (
+\begin_inset Formula $10^{5}$
+\end_inset
+
+), we achieved a best speed-up of 
+\begin_inset Formula $22\times$
+\end_inset
+
+ using OpenCL on the CPU.
+ For small numbers of events (
+\begin_inset Formula $10^{3}$
+\end_inset
+
+), we achieved a best speed-up of 
+\begin_inset Formula $4\times$
+\end_inset
+
+ using OpenMP on the CPU.
+ The best GPU speed-up was 
+\begin_inset Formula $7\times$
+\end_inset
+
+ for 
+\begin_inset Formula $10^{5}$
+\end_inset
+
+ events.
+ This is mainly a result of the data transfer time, which more than offsets
+ the improvement in computation time.
+ 
+\end_layout
+
+\begin_layout Section
+Background
+\end_layout
+
+\begin_layout Subsection
+Hadron Spectroscopy
+\end_layout
+
+\begin_layout Standard
+In theoretical physics, quantum chromodynamics (QCD) is a theory of the
+ interactions between quarks and gluons which make up hadrons (such as the
+ proton, neutron or kaon).
+ Quantum chromodynamics does well to explain the strong interaction, but
+ ultimately fails at the mass level of a proton.
+ For this, we look at quark models, such as the diquark models or the symmetric
+ quark model.
+ These models each predict a set of 
+\emph on
+resonances
+\emph default
+ ((unstable particles), and if we can experimentally find resonances predicted
+ by some quark models and not others, we can learn valuable information
+ about the nucleons (protons and neutron).
+ 
+\end_layout
+
+\begin_layout Standard
+One way of finding these resonances is through 
+\emph on
+pseudoscalar meson photoproduction
+\emph default
+, a physical process which can be completely described by four complex amplitude
+s.
+ In pseudoscalar meson photoproduction, an incoming photon beam is incident
+ on a stationary nucleon target.
+ Several scattering products (and decay products) are then emitted and detected
+ by a large acceptance detector.
+ These amplitudes are experimentally accessible through 16 polarisation
+ observables, which are all correlated through these amplitudes.
+ Through different experimental setups (such as transverse target polarisation,
+ linear beam polarisation, etc) we can access different observables.
+ 
+\end_layout
+
+\begin_layout Standard
+Using nested sampling analysis, we explore the amplitude space rather than
+ treating observables as independent free variables.
+ By doing so, we maximise the information we can extract from the experimental
+ data and all correlations are inherently kept in tact.
+ From recent results, it is clear that this approach gives us much more
+ information about polarisation observables to which the particular experimental
+ setup is not sensitive.
+\end_layout
+
+\begin_layout Subsection
+Nested Sampling Monte Carlo
+\end_layout
+
+\begin_layout Standard
+Nested sampling 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "skilling2006nested"
+
+\end_inset
+
+ is a form of Markov Chain Monte Carlo, a Bayesian statistics approach to
+ data analysis.
+ Whilst nested sampling was applied to a specific nuclear physics problem
+ in this paper, it is, at its core, a general algorithm that could be applied
+ to a wide range of problems across all disciplines.
+\end_layout
+
+\begin_layout Standard
+The primary objective of nested sampling is to provide a future-proof model
+ comparison tool.
+ An initial distribution, called the prior, is used in conjunction with
+ an event-by-event likelihood function to generate a final distribution
+ (known as the posterior) and a value commonly referred to as evidence,
+ Z.
+ This evidence value is the feature that allows for straightforward, time-indepe
+ndent comparisons of model assumptions.
+\end_layout
+
+\begin_layout Standard
+For this work the focus is on the output of a posterior distribution (rather
+ than the evidence).
+ A prior consisting of points distributed across a physically constrained
+ region of space is generated.
+ An event-by-event likelihood function is applied to this prior, and the
+ resulting posterior distribution is examined.
+\end_layout
+
+\begin_layout Standard
+For each point in the prior, a likelihood value is calculated based on a
+ problem-specific likelihood function.
+ The point with the lowest likelihood is recorded and overwritten with a
+ copy of a surviving point.
+ This new point is then altered and its likelihood is calculated.
+ If the resulting likelihood is lower than that of the overwritten point,
+ the new point is moved again.
+ This process continues until the likelihood of the new point is greater
+ than that of the overwritten point.
+ The algorithm then finds the next point with the lowest likelihood and
+ the process is repeated until a given termination condition is met 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "sivia2006data"
+
+\end_inset
+
+.
+ For consistency, the termination condition used in this work was a set
+ number of iterations.
+\end_layout
+
+\begin_layout Subsection
+Data Parallelisation
+\end_layout
+
+\begin_layout Standard
+Since the clock speed of CPUs has stagnated, parallel programming has become
+ the focus of computing performance development.
+ The use of multicore processors and General-Purpose Graphics Processing
+ Units (GPGPUs) has become mainstream in everything from scientific computing
+ and state-of-the-art gaming technology to standard desktop computers and
+ laptops.
+ There is now a sustainable path to improving computing technologies for
+ the foreseeable future.
+ Although the spotlight is currently on GPGPU computing, it must be remembered
+ that all programs and algorithms will include some amount of sequential
+ code, even if it exists solely to execute kernel functions or perform or
+ some standard initialisations.
+ In most cases, these serial sections of a program create bottlenecks that
+ no amount of parallelisation can avoid.
+ For this reason, heterogeneous platforms -- i.e.
+ the combination of highly optimised CPU cores with the massively parallelisable
+ GPU cores -- have become increasingly popular.
+ These two components must complement each other -- if the CPU is outdated
+ and obsolete, any speed-up obtained from a high-end GPU will be hidden
+ by the slow processing at one of these bottlenecks.
+ In order to make the most of the available hardware, both components must
+ be taken into consideration.
+\end_layout
+
+\begin_layout Standard
+Although initially used to categorise the various types of computer hardware
+ systems, Flynn's taxonomy has recently been applied to software and algorithms:
+ Single Instruction stream Single Data (SISD) refers to a sequential algorithm
+ (one piece of data being used in a single operation), Single Instruction
+ stream Multiple Data (SIMD) includes programs that perform the same operation
+ on many data concurrently.
+ SIMD algorithms are at the heart of data parallelisation.
+ There are many cases in data analysis where an algorithm performs operations
+ on many data points independently.
+ For these situations, a considerable speed-up can be achieved by dividing
+ the data set into smaller sections and performing the same operations in
+ parallel, with one thread handling one section of data.
+\end_layout
+
+\begin_layout Standard
+Not all algorithms can be parallelised; recursive and sequential programs,
+ or even serial sections of code, can form bottlenecks that impede the run-time
+ of a program.
+ There are some cases where parallelising data over multiple threads or
+ cores can result in a slower run-time as no speed-up is gained and time
+ is lost during data transfer or thread initialisations.
+ Even in cases where an algorithm lends itself naturally to parallelism,
+ it is crucial to understand exactly where and how it should be done in
+ order to obtain the greatest benefit.
+\end_layout
+
+\begin_layout Subsection
+CPU/GPU System Performance
+\end_layout
+
+\begin_layout Standard
+It is important to have an idea what to expect in terms of performance of
+ a GPU-accelerated application.
+ The achievable speed-up from offloading an application to a GPU can be
+ analysed as a function of the computational speed up (which in its term
+ depends on the hardware parallelism, clock speed and memory bandwidth)
+ and the data transfer speed.
+ Figure 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Achievable-speed-up-from"
+
+\end_inset
+
+ shows a generic graph which can be used to assess the performance of an
+ algorithm.
+ 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename GPU_CPU_achievable_speedup.pdf
+	width 100col%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Achievable-speed-up-from"
+
+\end_inset
+
+Achievable speed-up from offloading work to the GPU
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+What the graph shows is the achievable speed-up as a function of the CPU
+ compute time relative to the data transfer time, with the GPU/CPU computational
+ speed-up as a parameter.
+ For example, if the computation on the CPU takes 100ms, and the data transfer
+ 1000ms, then there can be no speed-up, no matter how fast the GPU computes.
+ On the other hand, if the CPU takes 1000ms and the transfer time is 100ms,
+ then with a GPU/CPU computational speed-up of 5
+\begin_inset Formula $\times$
+\end_inset
+
+ the total speed-up = 1000 / (100+1000/5) = 3.3x.
+ The curved lines assume overlapping of data transfers and computation (
+\begin_inset Quotes eld
+\end_inset
+
+pipelined
+\begin_inset Quotes erd
+\end_inset
+
+ in the legend); the straight lines assume alternating data transfers and
+ computations.
+ It is clear that overlapping only makes a significant difference if the
+ data transfer and computation times are of the same order.
+\end_layout
+
+\begin_layout Standard
+To facilitate the analysis, we define the computation performance indicator
+ as 
+\emph on
+CPI= #threads 
+\begin_inset Formula $\times$
+\end_inset
+
+ SIMD vector size 
+\begin_inset Formula $\times$
+\end_inset
+
+ clock speed
+\emph default
+.
+ This number is directly proportional to flops, but more easy to obtain
+ from datasheets.
+ We define 
+\begin_inset Quotes eld
+\end_inset
+
+threads
+\begin_inset Quotes erd
+\end_inset
+
+ as the product of the number of cores and their hyperthreading capability;
+ 
+\begin_inset Quotes eld
+\end_inset
+
+SIMD vector size
+\begin_inset Quotes erd
+\end_inset
+
+ is defined as the number of single-precision floating-point operations
+ that can be performed in parallel, so on a CPU this is e.g.
+ the width of the SSE or AVX vector instructions; on a GPU it would be the
+ number of processing elements per compute unit.
+ In Section 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "Hardware-Platform"
+
+\end_inset
+
+ we will use the CPI to assess the expected performance of the hardware
+ platform used in this work.
+\end_layout
+
+\begin_layout Section
+Methodology
+\end_layout
+
+\begin_layout Standard
+The inputs for the Nested Sampling algorithm are a set of observations from
+ a hadron beam scattering experiment.
+ When the scattered products are detected, their energies and scattering
+ angles are found.
+ In our experiment, 
+\begin_inset Formula $\phi$
+\end_inset
+
+ is the scattering angle of the kaon particle.
+ The beam was linearly polarised and a variable 
+\emph on
+pol
+\emph default
+ indicates whether the beam was parallel or perpendicular for a given event.
+ The only observable used in the (simplified) likelihood computation is
+ the photon beam asymmetry 
+\begin_inset Formula $B$
+\end_inset
+
+.
+ 
+\begin_inset Formula $P_{\gamma}$
+\end_inset
+
+ refers to the energy of the beam.
+ For more details on the physics experiment we refer the reader to 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "ireland2010information"
+
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_layout Standard
+The original code for the Nested Sampling analysis was written in C++ using
+ CERN's ROOT toolkit 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "brun1997root"
+
+\end_inset
+
+.
+ Analysis of the algorithm and run-time profiling show that the likelihood
+ calculation is the most computationally intensive step and that it can
+ be parallelised.
+ The calculation can be expressed as
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\begin{align*}
+\tilde{A}=\frac{P_{\gamma}.B.cos(2\phi_{i})+\delta_{L})}{1+\delta_{L}.P_{\gamma}.B.cos(2\phi_{i}))}\\
+P_{i}(pol_{i},\phi_{i})=\begin{cases}
+{\it pol_{i}=0:} & \frac{1}{2(1+\tilde{A})}\\
+pol_{i}=1: & \frac{1}{2(1-\tilde{A})}
+\end{cases}\\
+L=\sum_{i=1}^{N}log(P_{i}({\it pol}_{i},\phi_{i}))
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+To parallelise this calculation, partial sums for 
+\begin_inset Formula $log(P_{i})$
+\end_inset
+
+ are computed in each thread, and a final accumulation over the number of
+ threads is performed.
+\end_layout
+
+\begin_layout Standard
+We implemented the parallel code using OpenCL (GPU/CPU) and OpenMP (CPU
+ only).
+ 
+\end_layout
+
+\begin_layout Subsection
+OpenCL Integration
+\end_layout
+
+\begin_layout Standard
+OpenCL 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "munshi2009opencl"
+
+\end_inset
+
+ was developed by the Khronos Group in 2008 as an open standard for parallel
+ programming of heterogeneous systems.
+ It provides an API for control and data transfer between the host and device
+ (typically the host CPU and a GPU) and a language for kernel development.
+ Contrary to proprietary solutions such as Nvidia's CUDA and Microsoft's
+ DirectX, OpenCL is open and cross-platform, so that it can be deployed
+ on different operating systems (Linux, OS X, Windows) and hardware architecture
+s (multicore CPUs, GPUs, FPGAs).
+ The OpenCL API is defined for C and a C++.
+ In practice, the API is quite fine grained and verbose and requires a lot
+ of boiler plate code to be written.
+ Consequently, it is not straightforward to integrate OpenCL in existing
+ codes, especially for non-computing scientists.
+ To facilitate the integration of the OpenCL code into the existing code
+ base, we developed the OclWrapper library
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+
+\backslash
+footnote{https://github.com/wimvanderbauwhede/OpenCLIntegration}
+\end_layout
+
+\end_inset
+
+ which supports C, C++ and Fortran-95.
+ The library wraps the OpenCL platform, context and command queue into a
+ single object, with a much smaller number of calls required to run an OpenCL
+ computation.
+ As it is a thin wrapper, the additional abstraction comes at no cost in
+ terms of features: the OpenCL API is completely accessible.
+ The main API methods and their usage are illustrated in Algorithm 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "alg:Hello,-World-in"
+
+\end_inset
+
+ (
+\emph on
+Hello, World
+\emph default
+)
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+%, which writes two characters to the device and reads back a 17-character
+ string
+\end_layout
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float algorithm
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color blue
+#include "OclWrapper.h"
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+int main () {
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    const int strSz=17;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    char cc1='
+\backslash
+n';
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    char cc2=' ';
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+  
+\family sans
+// Instantiate the OpenCL Wrapper
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+   
+\color blue
+ OclWrapper ocl();
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+  
+\family sans
+// Load the Kernel from file
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    
+\color blue
+ocl.loadKernel(
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        
+\color blue
+"helloworld.cl","hello_world");
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+   
+\color blue
+ ocl.createQueue();
+\end_layout
+
+\begin_layout LyX-Code
+
+\family sans
+\size small
+    // Create Buffers for reading & writing
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+   
+\color blue
+ cl::Buffer& str_buf=
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        
+\color blue
+ocl.makeWriteBuffer(strSz);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+   
+\color blue
+ cl::Buffer& c1=ocl.makeReadBuffer(1);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    
+\color blue
+cl::Buffer& c2=ocl.makeReadBuffer(1);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+     
+\color blue
+ocl.writeBuffer(c1,1,&cc1);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    
+\color blue
+ocl.writeBuffer(c2,1,&cc2);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+  
+\family sans
+// Enqueue the Kernel, NullRange by default
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    
+\color blue
+ocl.enqueueNDRange();
+\end_layout
+
+\begin_layout LyX-Code
+
+\family sans
+\size small
+    // Run the Kernel and 
+\end_layout
+
+\begin_layout LyX-Code
+
+\family sans
+\size small
+    // wait for it to finish
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    
+\color blue
+ocl.run(str_buf,c1,c2).wait();
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+  
+\family sans
+// Read back the result
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    char* str=(char*)malloc(strSz);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    
+\color blue
+ocl.readBuffer(str_buf,strSz,str);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+  
+\family sans
+// Display the result
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    std::cout <<str;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+  
+\family sans
+// Exit
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    return 1;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+}
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "alg:Hello,-World-in"
+
+\end_inset
+
+Hello, World in OpenCL using the C++ OclWrapper API
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+OpenCL versus OpenMP
+\end_layout
+
+\begin_layout Standard
+Apart from the OpenCL implementation, and in order to assess the performance,
+ we also implemented the kernel in OpenMP 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "dagum1998openmp"
+
+\end_inset
+
+, an API for parallel programming on shared-memory multicore platforms.
+ The OpenMP API consists of a set of preprocessor directives (pragmas) and
+ function calls.
+\end_layout
+
+\begin_layout Standard
+The OpenCL kernel and the corresponding OpenMP code are shown in Algorithms
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "alg:OpenCL-kernel"
+
+\end_inset
+
+ and 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "alg:OpenMP-kernel"
+
+\end_inset
+
+.
+ The differences between both are quite small, and fall into three categories:
+ first, the OpenMP code is object-oriented C++ code, so some of the variables
+ (e.g.
+ angles, nEvents) are class attributes and not subroutine arguments.
+ In OpenCL all input and output variables must be kernel arguments in the
+ 
+\family typewriter
+\size small
+__global
+\family default
+\size default
+ memory space and the subroutine must be 
+\family typewriter
+\size small
+__kernel void
+\family default
+\size default
+, so the kernel signature is longer.
+ Second, OpenMP requires pragmas (
+\family typewriter
+\size small
+#pragma omp ...
+\family default
+\size default
+) to control the parallelism and indicate which variables are shared.
+ Finally, the most important difference is that OpenMP parallelises the
+ complete loop implicitly, whereas each instance of the OpenCL kernel executes
+ explicitly on part of the loop.
+ This requires the use of the OpenCL API functions such as 
+\family typewriter
+\size small
+get_global_id()
+\family default
+\size default
+ etc.
+ 
+\end_layout
+
+\begin_layout Standard
+In the OpenMP code, we compute the partial sums per OpenMP thread and aggregate
+ them.
+ In our OpenCL code, the loop is divided into parts to be executed in every
+ thread of every compute unit using the global id; we create a partial sum
+ in every thread and aggregate it per compute unit.
+ To ensure that the computation of all partial results in the workgroup
+ was finished, we insert the barrier() call.
+ Finally, we return the result for each compute unit via the array 
+\family typewriter
+\size small
+LogL[group_id]
+\family default
+\size default
+.
+ The sum over all compute units is performed on the host.
+ This partitioning between the threads and compute units is obtained by
+ setting the NDRange:
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+ocl.enqueueNDRange(
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    cl::NDRange(compute_units*NTH), 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    cl::NDRange(NTH)); 
+\end_layout
+
+\begin_layout Standard
+The global work range is 
+\family typewriter
+\size small
+compute_units*NTH
+\family default
+\size default
+, i.e.
+ the total number of threads on the GPU; the local range is 
+\family typewriter
+\size small
+NTH
+\family default
+\size default
+, the number of threads per compute unit.
+ 
+\end_layout
+
+\begin_layout Subsection
+Hardware Platform
+\begin_inset CommandInset label
+LatexCommand label
+name "Hardware-Platform"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The host CPU used in this work is an Intel i7-2700K running at 3.5GHz.
+ It is a quad-core CPU with hyperthreading.
+ The maximum memory bandwidth is 21 GB/s.
+ This processor has 256-bit AVX SIMD, so a smart compiler will do up to
+ 8 floating point operations in parallel.
+ The GPU used is an NVidia Tesla S2075 GPU with 14 compute units (448 
+\begin_inset Quotes eld
+\end_inset
+
+cores
+\begin_inset Quotes erd
+\end_inset
+
+) running at 1.15 GHz.
+ The maximum memory bandwidth is 144 GB/s.
+ The host-device connection is a 16-lane Gen2 PCIe bus.
+ The CPIs are show in Table 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "tab:Specifications-of-hardware"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float table
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Tabular
+<lyxtabular version="3" rows="3" columns="6">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top" width="1.8cm">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="1cm">
+<column alignment="center" valignment="top" width="1cm">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="1cm">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Platform
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+#Cores
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Vector size
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Clock speed (GHz)
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+CPI
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Memory BW (GB/s)
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Intel i7-2700K
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+12
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+8
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+3.5
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+336
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+21
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Nvidia Tesla S2075
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+14
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+32
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1.15
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+515.2
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+144
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "tab:Specifications-of-hardware"
+
+\end_inset
+
+Specifications of hardware platforms used in this work
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We observe that purely in terms of computation, under optimal circumstances,
+ the Tesla GPU can be at best 1.5
+\begin_inset Formula $\times$
+\end_inset
+
+ faster than the Intel CPU.
+ If the memory bandwidth would be the limiting factor (as opposed to computation
+), the achievable speed-up for the application running on the GPU would
+ be 6.8
+\begin_inset Formula $\times$
+\end_inset
+
+.
+ The total achievable speed-up is limited by the data transfer rate between
+ host memory and GPU memory, and the overhead for control of the GPU.
+ 
+\begin_inset ERT
+status open
+
+\begin_layout Plain Layout
+
+%According to our measurements we achieve about 2GB/s reading from the GPU
+ and 8GB/s writing to the GPU.
+\end_layout
+
+\end_inset
+
+ In Section 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "Impact-of-Data"
+
+\end_inset
+
+ we present the detailed discussion of the cost of data transfer and computation.
+ However, as our application is not memory bandwidth limited, the CPI shows
+ that even ignoring the transfer time, the speed-up from the GPU will be
+ very modest, and that taking into account the transfer time, we expect
+ the GPU to perform less well than the CPU.
+\end_layout
+
+\begin_layout Section
+Results and Discussion
+\end_layout
+
+\begin_layout Standard
+In our design of experiments we varied the number of events (
+\begin_inset Formula $10^{3},10^{4},10^{5}$
+\end_inset
+
+) and the number of threads (2 to 64), and the number of iterations (from
+ 10K to 150K).
+ Each experiment was repeated 20 times, we verified that variation was negligibl
+e and computed the averages.
+\end_layout
+
+\begin_layout Subsection
+Optimal Number of Threads
+\end_layout
+
+\begin_layout Standard
+We performed tests to determine the optimal number of threads using each
+ dataset on the three implementations that allowed for multithreading.
+ The number of threads over which to parallelise the data was changed and
+ the program runtime was measured.
+\end_layout
+
+\begin_layout Standard
+The Figures 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Thread-test-1000"
+
+\end_inset
+
+, 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Thread-test-10000"
+
+\end_inset
+
+ and 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Thread-test-100000"
+
+\end_inset
+
+ illustrate that the optimal number of threads is dependent on the size
+ of the dataset, and differs for the various implementations.
+ The large variation in the OpenMP performance is due to the fact that the
+ OpenMP performance improves for growing numbers of threads as long as there
+ are fewer OpenMP threads than physical threads.
+ Once the number of OpenMP threads exceeds the number of physical threads,
+ the performance deteriorates strongly.
+ This effect is also observable for OpenCL on the CPU, but much less pronounced,
+ because OpenCL schedules the threads so that they do not compete with one
+ another.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement htbp
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename threadplot_1000e_logscale.pdf
+	width 90col%
+
+\end_inset
+
+ 
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Thread-test-1000"
+
+\end_inset
+
+Thread test results from dataset with 1000 events.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement htbp
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename threadplot_10000e_logscale.pdf
+	width 90col%
+
+\end_inset
+
+ 
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Thread-test-10000"
+
+\end_inset
+
+Thread test results from dataset with 10000 events.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement htbp
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename threadplot_100000e_logscale.pdf
+	width 90col%
+
+\end_inset
+
+ 
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Thread-test-100000"
+
+\end_inset
+
+Thread test results from dataset with 100 000 events.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Optimal Performance
+\end_layout
+
+\begin_layout Standard
+Figure 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Performance-for-optimal"
+
+\end_inset
+
+ shows the performance for the optimal number of threads for each implementation
+, as a function of the number of events.
+ As expected, we observed no dependency on the number of iterations (50K
+ in the Figure).
+ The most interesting observation is the difference in behaviour between
+ the OpenCL and OpenMP parallel code: the execution time of the OpenMP code
+ (for 8 threads) is proportional to number of events; however, the OpenCL
+ code performs significantly better for large numbers of events.
+ Interestingly, the OpenCL code results in a larger speed-up than suggested
+ by the number of hardware threads on the CPU, which indicates that the
+ Intel OpenCL compiler also uses the vector support of the CPU.
+ As a result of this different behaviour, there is no single optimal implementat
+ion:
+\end_layout
+
+\begin_layout Standard
+For large numbers of events (
+\begin_inset Formula $10^{5}$
+\end_inset
+
+), the best choice is OpenCL on the CPU, with a speed-up of up to 22
+\begin_inset Formula $\times$
+\end_inset
+
+.
+ For small numbers of events (
+\begin_inset Formula $10^{3}$
+\end_inset
+
+), the best choice is OpenMP, the achievable speed-up is smaller, up to
+ 4
+\begin_inset Formula $\times$
+\end_inset
+
+ For intermediate numbers (
+\begin_inset Formula $10^{4}$
+\end_inset
+
+), best speed-up was 8
+\begin_inset Formula $\times$
+\end_inset
+
+ using OpenCL on the CPU.
+ The best GPU speed-up was 7
+\begin_inset Formula $\times$
+\end_inset
+
+ for 
+\begin_inset Formula $10^{5}$
+\end_inset
+
+ events.
+ This is mainly a result of the data transfer time, which more than offsets
+ the improvement in computation time.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+placement !h
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename optimalthreads_timingplot_logscale.pdf
+	width 9cm
+
+\end_inset
+
+ 
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Performance-for-optimal"
+
+\end_inset
+
+Performance for optimal number of threads
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Impact of Data Transfer Time
+\begin_inset CommandInset label
+LatexCommand label
+name "Impact-of-Data"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The amount of time spent merely transferring data to a given compute device
+ using OpenCL was measured by running the program with an empty likelihood
+ kernel function.
+ 
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Float table
+placement !h
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Data transfer results per iteration for OpenCL on the GPU.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset ERT
+status collapsed
+
+\begin_layout Plain Layout
+
+
+\backslash
+centering
+\end_layout
+
+\end_inset
+
+ 
+\begin_inset Tabular
+<lyxtabular version="3" rows="5" columns="4">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+#Events 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Data transfer time (ms) 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Total time (ms) 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+% Data transfer 
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1000 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.227\pm0.008$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.277\pm0.0023$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+82 
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+5000 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.231\pm0.010$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.328\pm0.0027$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+70 
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+10000 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.232\pm0.004$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.3997\pm0.0041$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+58 
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+100000 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.229\pm0.005$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $1.560\pm0.0010$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+15 
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Float table
+placement !h
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+Data transfer results per iteration for OpenCL on the CPU.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset ERT
+status collapsed
+
+\begin_layout Plain Layout
+
+
+\backslash
+centering
+\end_layout
+
+\end_inset
+
+ 
+\begin_inset Tabular
+<lyxtabular version="3" rows="5" columns="4">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+#Events
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Data transfer time (ms) 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Total time (ms) 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+% Data transfer 
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+1000 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.021\pm0.0007$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.0457\pm0.001$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+46 
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+5000 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.021\pm0.0022$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.0776\pm0.001$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+27 
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+10000 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.021\pm0.0007$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.114\pm0.0006$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+18 
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+100000 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.021\pm0.0011$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0.790\pm0.0074$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+3 
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The data transfer time is linear with the dataset size but has a significant
+ constant offset.
+ This offset is the time taken to control the GPU, i.e.
+ not the actual transfer time.
+ The corresponding time for OpenCL on the CPU is about 10
+\begin_inset Formula $\times$
+\end_inset
+
+ smaller.
+ The dataset sizes used in this work are typical for problems in hadron
+ spectroscopy but are fairly small in absolute size.
+ 
+\end_layout
+
+\begin_layout Standard
+These results illustrate that a significant portion of the run-time for
+ the GPU is spent handling the control of the device.
+ In algorithms such as nested sampling, where the kernel is invoked many
+ times for relatively small calculations, data parallelism on the GPU is
+ not necessarily the most effective solution.
+ Parallelising data and running on the CPU provides a much more noticeable
+ speed-up, partly due to this overhead.
+ This is in line with our CPI-based analysis.
+ 
+\end_layout
+
+\begin_layout Section*
+Conclusion
+\end_layout
+
+\begin_layout Standard
+Our work demonstrates that OpenCL can be used successfully to accelerate
+ a Nested-Sampling Monte Carlo Algorithm.
+ Thanks to our novel OclWrapper library, the OpenCL integration requires
+ only a small additional effort compared to OpenMP.
+ Our work also shows that the best choice of implementation and hardware
+ platform depends very much on the size of the events data set.
+ In any case, for this particular algorithm, the amount of computations
+ is too small to outweigh the cost of the data transfer to the GPU, so a
+ multicore CPU is a better choice.
+ For large numbers of events (
+\begin_inset Formula $10^{5}$
+\end_inset
+
+), we achieved a speed-up of up to 
+\begin_inset Formula $22\times$
+\end_inset
+
+.
+ In future work we want to investigate if we can convert more portions of
+ the Nested Sampling algorithm into OpenCL kernels, in order to reduce the
+ data transfer between host and device.
+\end_layout
+
+\begin_layout Standard
+\begin_inset CommandInset bibtex
+LatexCommand bibtex
+bibfiles "paper_HPCS2013"
+options "IEEEtran"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Newpage clearpage
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float algorithm
+placement p
+wide false
+sideways false
+status open
+
+\begin_layout LyX-Code
+
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+__kernel void Likelihood(__global float* B_Pg, 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+__global float* angles, __global float* pols, 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+__global float* LogL, const float Log2e, 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+const int Asize, const int nunits) {
+\end_layout
+
+\begin_layout LyX-Code
+ 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    int group_id=get_group_id(0); 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    int glob_id = get_global_id(0);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    int th_id = get_local_id(0);
+\end_layout
+
+\begin_layout LyX-Code
+ 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    float B=B_Pg[0];
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    float Pg=B_Pg[1];
+\end_layout
+
+\begin_layout LyX-Code
+ 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    float  delta_L      = 0.0;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    float  LogL_2       = 0.0;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    float  LogL_2_th      = 0.0;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    local  float LogL_2_array[NTH];
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    int mSz = Asize/(nunits*NTH);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    int start = glob_id*mSz;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    int stop = start+mSz
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    for (int idx = 
+\color red
+start
+\color inherit
+; idx<
+\color red
+stop
+\color inherit
+; idx++) {
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        float angle = angles[idx];
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        float pol   = pols[idx];
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        float costerm = Pg*B*cos(2*angle);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        float A_tilde = (costerm + delta_L) 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+                     /(1+(costerm*delta_L));
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        float prob  = 0.0;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        if (pol < 0){
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            prob = 0.5*(1 + A_tilde); 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        } else {
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            prob = 0.5*(1 - A_tilde);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        }
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        LogL_2_th += log2(prob);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    }
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    LogL_2_array[th_id] = LogL_2_th;
+\end_layout
+
+\begin_layout LyX-Code
+
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    barrier(CLK_LOCAL_MEM_FENCE);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    for (int i = 0; i < NTH; i++){
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        LogL_2 += LogL_2_array[i];
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    }
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    
+\color red
+LogL[group_id]
+\color inherit
+ = LogL_2 / Log2e;  
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+}
+\end_layout
+
+\begin_layout LyX-Code
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "alg:OpenCL-kernel"
+
+\end_inset
+
+OpenCL kernel
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float algorithm
+placement p
+wide false
+sideways false
+status open
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+#include <omp.h>
+\end_layout
+
+\begin_layout LyX-Code
+ 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+class NS {     
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    public: 		
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    // ...
+         
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    virtual float Likelihood (float B, float Pg);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+	// ...
+         
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    float *angles;          
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    float *pols;           
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    int nEvents; 		 		
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    // ...
+ 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+}
+\end_layout
+
+\begin_layout LyX-Code
+   
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+float NS::Likelihood(float B, float Pg) {
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    float delta_L  = 0.0; 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    float LogL     = 0.0;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    float *LogL_2_array = new float[NTH];
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    for (int i = 0; i < NTH; i++){
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+        LogL_2_array[i] = 0.0;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    }
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    float LogL_2   = 0.0;
+\end_layout
+
+\begin_layout LyX-Code
+
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+#pragma omp parallel private(delta_L) 
+\backslash
+
+\backslash
+
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    shared(LogL_2_array) num_threads(NTH) 
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    {
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+        int th_id = omp_get_thread_num();
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        float LogL_2_th=0.0;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+#pragma omp for
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        for (int idx = 
+\color red
+0
+\color inherit
+; idx < 
+\color red
+nEvents
+\color inherit
+; idx++){
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            float angle = angles[idx];
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            float pol   = pols[idx];
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            float costerm = Pg*B*cos(2*angle);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            float A_tilde = (costerm + delta_L)  
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+                         /(1+(costerm*delta_L));
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            float prob = 0.0;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            if ( pol < 0 ){
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+                prob = 0.5*(1 + A_tilde);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            } else {
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+                prob = 0.5*(1 - A_tilde);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            }
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+            LogL_2_th += log2(prob);
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        }
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        LogL_2_array[th_id] = LogL_2_th;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    } // omp parallel
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    for(int i = 0; i < NTH; i++){
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+        LogL_2 += LogL_2_array[i];
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    }
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+    
+\color red
+LogL
+\color inherit
+ = LogL_2 / Log2e;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+\color red
+    return LogL;
+\end_layout
+
+\begin_layout LyX-Code
+
+\size small
+}
+\end_layout
+
+\begin_layout LyX-Code
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "alg:OpenMP-kernel"
+
+\end_inset
+
+OpenMP kernel
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_body
+\end_document
